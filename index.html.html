@@ -1,0 +1,1591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cybersecurity North Star — World Bank Digital Development</title>
+
+<!-- D3 for map rendering -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<!-- TopoJSON for country shapes -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<!-- Chart.js for radar charts -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+<style>
+  /* Reset */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --wb-blue: #002244;
+    --wb-blue-mid: #003a6b;
+    --wb-blue-light: #1a5276;
+    --wb-orange: #F7941E;
+    --wb-light: #f5f7fa;
+    --text: #1a2332;
+    --text-muted: #6b7a8d;
+    --border: #dde3eb;
+    /* GCI tier colors */
+    --tier1: #1a6b3c;
+    --tier2: #4575b4;
+    --tier3: #f4a939;
+    --tier4: #e8773a;
+    --tier5: #c0392b;
+    --no-data: #ccc;
+    --panel-bg: #ffffff;
+    --radius: 8px;
+  }
+
+  body {
+    font-family: 'Segoe UI', system-ui, Arial, sans-serif;
+    background: var(--wb-light);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Header */
+  header {
+    background: linear-gradient(135deg, var(--wb-blue) 0%, var(--wb-blue-mid) 100%);
+    color: white;
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 64px;
+    flex-shrink: 0;
+    box-shadow: 0 2px 12px rgba(0,0,0,.25);
+  }
+  header .logo {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  header .logo-icon {
+    width: 36px; height: 36px;
+    background: var(--wb-orange);
+    border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+  }
+  header .logo-text h1 {
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: .3px;
+  }
+  header .logo-text .subtitle {
+    font-size: 11px;
+    color: rgba(255,255,255,.6);
+    margin-top: 1px;
+  }
+  .header-right {
+    display: flex; gap: 8px; align-items: center;
+  }
+  .year-badge {
+    background: var(--wb-orange);
+    color: white;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .source-badge {
+    background: rgba(255,255,255,.12);
+    color: rgba(255,255,255,.8);
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: 500;
+  }
+
+  /* Layout */
+  .app-body { display: flex; flex: 1; overflow: hidden; }
+
+  /* Sidebar */
+  .sidebar {
+    width: 264px;
+    flex-shrink: 0;
+    background: var(--panel-bg);
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .sidebar-section h3 {
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+  }
+  .filter-btn {
+    display: block;
+    width: 100%;
+    padding: 7px 12px;
+    margin-bottom: 4px;
+    background: var(--wb-light);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+    transition: all .15s;
+    color: var(--text);
+  }
+  .filter-btn:hover { background: #e8ecf1; }
+  .filter-btn.active {
+    background: var(--wb-blue);
+    color: white;
+    border-color: var(--wb-blue);
+  }
+
+  /* Legend */
+  .legend-row {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 5px; font-size: 11px;
+  }
+  .legend-swatch {
+    width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0;
+  }
+
+  /* Pillar selector */
+  .pillar-select {
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+    background: white;
+    color: var(--text);
+    cursor: pointer;
+  }
+
+  /* Region pills */
+  .region-pills { display: flex; flex-wrap: wrap; gap: 5px; }
+  .pill {
+    padding: 4px 10px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    font-size: 11px;
+    cursor: pointer;
+    background: white;
+    transition: all .15s;
+    color: var(--text);
+  }
+  .pill:hover { background: #e8ecf1; }
+  .pill.active { background: var(--wb-blue); color: white; border-color: var(--wb-blue); }
+
+  /* Compare sidebar */
+  .compare-list { display: flex; flex-direction: column; gap: 4px; }
+  .compare-chip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--wb-blue);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+  }
+  .compare-chip button {
+    background: none; border: none; color: #9ab0cc; cursor: pointer; font-size: 14px; line-height: 1; padding: 0;
+  }
+  .compare-chip button:hover { color: white; }
+  .compare-empty { font-size: 12px; color: var(--text-muted); font-style: italic; }
+  .btn-compare {
+    width: 100%;
+    padding: 8px;
+    background: var(--wb-orange);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 8px;
+  }
+  .btn-compare:hover { opacity: .88; }
+
+  /* Main area */
+  .map-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+
+  /* Tabs */
+  .tabs {
+    display: flex; gap: 2px; padding: 10px 16px 0; background: white; border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  .tab {
+    padding: 8px 18px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 6px 6px 0 0;
+    border: 1px solid transparent;
+    color: var(--text-muted);
+    transition: all .15s;
+    background: none;
+  }
+  .tab:hover { color: var(--text); background: var(--wb-light); }
+  .tab.active {
+    color: var(--wb-blue);
+    background: white;
+    border-color: var(--border);
+    border-bottom-color: white;
+    font-weight: 600;
+    margin-bottom: -1px;
+  }
+
+  /* Views */
+  .views { flex: 1; overflow: hidden; position: relative; }
+  .view { display: none; height: 100%; }
+  .view.active { display: flex; }
+
+  /* Map view */
+  #view-map { flex-direction: column; position: relative; }
+  #map-svg-container { flex: 1; overflow: hidden; background: #e8f0f8; position: relative; }
+  #map-svg { width: 100%; height: 100%; cursor: grab; }
+  #map-svg:active { cursor: grabbing; }
+  .country { stroke: #fff; stroke-width: .4px; transition: opacity .15s; }
+  .country:hover { stroke: #333; stroke-width: 1.5px; opacity: .85; cursor: pointer; }
+  .country.selected { stroke: var(--wb-orange); stroke-width: 2px; }
+  .country.dimmed { opacity: .25; }
+
+  /* Tooltip */
+  #tooltip {
+    position: fixed;
+    background: rgba(0,15,40,.94);
+    color: white;
+    padding: 14px 16px;
+    border-radius: 10px;
+    font-size: 12px;
+    pointer-events: none;
+    max-width: 280px;
+    display: none;
+    z-index: 1000;
+    box-shadow: 0 8px 32px rgba(0,0,0,.35);
+    line-height: 1.5;
+  }
+  #tooltip .tt-name { font-size: 15px; font-weight: 700; margin-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,.12); padding-bottom: 6px; }
+  #tooltip .tt-score { font-size: 22px; font-weight: 800; color: var(--wb-orange); }
+  #tooltip .tt-tier { font-size: 10px; color: #9ab0cc; text-transform: uppercase; letter-spacing: .5px; margin-left: 6px; }
+  #tooltip .tt-pillars { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+  #tooltip .tt-pillar-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  #tooltip .tt-pillar-label { font-size: 11px; color: #9ab0cc; width: 100px; }
+  #tooltip .tt-bar-bg { flex: 1; height: 4px; background: rgba(255,255,255,.1); border-radius: 2px; overflow: hidden; }
+  #tooltip .tt-bar-fill { height: 100%; border-radius: 2px; }
+  #tooltip .tt-val { font-size: 11px; width: 30px; text-align: right; }
+  #tooltip .tt-meta { margin-top: 8px; font-size: 10px; color: #9ab0cc; display: flex; flex-direction: column; gap: 2px; }
+
+  /* Map footer */
+  .map-footer {
+    padding: 6px 16px; background: white; border-top: 1px solid var(--border);
+    font-size: 11px; color: var(--text-muted); flex-shrink: 0;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .zoom-controls { display: flex; gap: 4px; }
+  .zoom-btn {
+    width: 26px; height: 26px; background: white; border: 1px solid var(--border);
+    border-radius: 4px; cursor: pointer; font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .zoom-btn:hover { background: var(--wb-light); }
+
+  /* Country panel */
+  #country-panel {
+    position: absolute; right: 0; top: 0; bottom: 40px;
+    width: 340px; background: white; border-left: 1px solid var(--border);
+    display: flex; flex-direction: column; z-index: 10;
+    box-shadow: -4px 0 24px rgba(0,0,0,.1);
+  }
+  #country-panel.open { display: flex; }
+  .panel-header {
+    padding: 14px 16px; background: var(--wb-blue); color: white;
+    display: flex; align-items: flex-start; justify-content: space-between;
+  }
+  .panel-header h2 { font-size: 16px; }
+  .panel-header .region-tag { font-size: 11px; color: #9ab0cc; margin-top: 2px; }
+  .panel-close {
+    background: none; border: none; color: #9ab0cc; cursor: pointer; font-size: 18px; line-height: 1; padding: 0;
+  }
+  .panel-close:hover { color: white; }
+  .panel-body {
+    padding: 16px; overflow-y: auto; flex: 1;
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  .panel-empty {
+    height: 100%; display: flex; align-items: center; justify-content: center;
+    text-align: center; color: var(--text-muted); font-size: 13px; line-height: 1.5;
+  }
+
+  /* Score badge */
+  .score-badge {
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 14px; background: var(--wb-light); border-radius: 8px;
+  }
+  .score-number { font-size: 36px; font-weight: 800; color: var(--wb-blue); line-height: 1; }
+  .score-meta { flex: 1; }
+  .score-tier { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+  .score-rank { font-size: 11px; color: var(--text-muted); }
+  .trend-arrow { font-size: 20px; }
+
+  /* Metric grid */
+  .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
+  .metric-card {
+    padding: 10px 12px; background: white; border: 1px solid var(--border); border-radius: var(--radius);
+  }
+  .metric-label { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); margin-bottom: 4px; }
+  .metric-value { font-size: 16px; font-weight: 800; color: var(--wb-blue); }
+  .metric-source { font-size: 9px; color: var(--text-muted); margin-top: 4px; }
+  .metric-source a { color: var(--wb-blue-mid); text-decoration: none; }
+
+  /* Pillar bars */
+  .pillars-section h4 { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .6px; color: var(--text-muted); margin-bottom: 10px; }
+  .pillar-bar-row { margin-bottom: 8px; }
+  .pillar-bar-row.selected { padding: 6px 8px; margin: -2px -8px 6px; background: #f0f6ff; border-radius: 6px; }
+  .pillar-bar-label { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; margin-bottom: 3px; }
+  .pillar-bar-title { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .pillar-status { flex-shrink: 0; padding: 1px 6px; border-radius: 9px; font-size: 10px; font-weight: 700; line-height: 1.4; }
+  .pillar-status.good { background: #e6f4ea; color: #1e7e34; }
+  .pillar-status.alert { background: #fce8e6; color: #c62828; }
+  .pillar-status.program { background: #e8f0fe; color: #1557b0; }
+  .pillar-score { font-weight: 600; color: var(--wb-blue); }
+  .pillar-bar-bg { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .pillar-bar-fill { height: 100%; border-radius: 3px; transition: width .4s ease; }
+
+  /* Gap analysis */
+  .gap-section h4 { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .6px; color: var(--text-muted); margin-bottom: 10px; }
+  .gap-card {
+    padding: 10px 12px; background: #fff8f0; border: 1px solid #ffe0b0;
+    border-left: 4px solid var(--wb-orange); border-radius: 6px; font-size: 12px; line-height: 1.5;
+  }
+  .gap-card .gap-title { font-weight: 700; font-size: 13px; color: #b85000; margin-bottom: 4px; }
+
+  /* Actions */
+  .panel-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .panel-actions button {
+    flex: 1; min-width: 100px; padding: 8px 10px; border-radius: 6px;
+    font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid var(--border); background: white;
+  }
+  .panel-actions button:hover { background: var(--wb-light); }
+  .panel-actions .btn-add-compare { background: var(--wb-blue); color: white; border-color: var(--wb-blue); }
+
+  /* Compare view */
+  #view-compare { flex-direction: column; padding: 20px; overflow-y: auto; gap: 20px; }
+  .compare-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .compare-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .compare-header h2 { font-size: 18px; font-weight: 700; color: var(--wb-blue); }
+  .compare-header p { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .compare-content { display: grid; grid-template-columns: 1fr; gap: 20px; }
+  .radar-wrap { background: white; border-radius: var(--radius); border: 1px solid var(--border); padding: 20px; min-height: 380px; display: flex; align-items: center; justify-content: center; }
+  .compare-table-wrap { background: white; border-radius: var(--radius); border: 1px solid var(--border); overflow: visible; }
+  .compare-table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+  .compare-table th { white-space: nowrap; padding: 10px 12px; background: var(--wb-blue); color: white; font-size: 11px; font-weight: 600; text-align: left; }
+  .compare-table td { white-space: normal; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+  .compare-table td:first-child { white-space: normal; width: 180px; font-weight: 600; }
+  .compare-table tr:last-child td { border-bottom: none; }
+  .compare-table tr:hover td { background: var(--wb-light); }
+  .compare-table .best { font-weight: 700; color: var(--wb-blue); }
+  .compare-empty-state { text-align: center; color: var(--text-muted); padding: 60px 20px; font-size: 14px; }
+  .compare-empty-state .icon { font-size: 40px; margin-bottom: 12px; }
+  .btn-secondary { padding: 8px 12px; background: white; border: 1px solid var(--border); border-radius: 6px; color: var(--wb-blue); font-size: 12px; font-weight: 700; cursor: pointer; }
+  .btn-secondary:hover { background: var(--wb-light); }
+  .btn-danger { padding: 8px 12px; background: white; border: 1px solid #f1b3ad; border-radius: 6px; color: #b3261e; font-size: 12px; font-weight: 700; cursor: pointer; }
+  .btn-danger:hover { background: #fce8e6; }
+  .btn-danger:disabled { border-color: var(--border); color: var(--text-muted); background: #f1f3f4; cursor: default; opacity: .75; }
+
+  /* Country list view */
+  #view-gaps { flex-direction: column; padding: 20px; overflow-y: auto; gap: 16px; }
+  .gaps-header h2 { font-size: 18px; font-weight: 700; color: var(--wb-blue); }
+  .gaps-header p { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .country-search { display: flex; align-items: center; gap: 10px; background: white; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
+  .country-search input { flex: 1; border: none; outline: none; font-size: 13px; color: var(--text); }
+  .country-search input::placeholder { color: var(--text-muted); }
+  .country-search-status { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+  .gap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 16px; }
+  .gap-country-card { background: white; border-radius: var(--radius); border: 1px solid var(--border); padding: 16px; transition: box-shadow .15s; }
+  .gap-country-card:hover { box-shadow: 0 2px 12px rgba(0,0,0,.1); }
+  .gap-country-card.search-match { border-color: var(--wb-orange); box-shadow: 0 0 0 2px rgba(247,148,30,.18); }
+  .gc-topline { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .gc-name { font-size: 14px; font-weight: 700; color: var(--wb-blue); margin-bottom: 4px; }
+  .gc-score { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+  .gc-tier-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; color: white; margin-left: 6px; }
+  .gc-pillars { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 12px 0; }
+  .gc-pillar-chip { background: var(--wb-light); border: 1px solid var(--border); border-radius: 5px; padding: 8px 6px; font-size: 11px; color: var(--text-muted); text-align: center; line-height: 1.2; min-width: 0; }
+  .gc-pillar-chip strong { display: block; color: var(--wb-blue); font-size: 15px; margin-top: 2px; }
+  .gc-actions { display: flex; gap: 6px; margin-top: 10px; }
+  .country-compare-btn { flex-shrink: 0; padding: 5px 8px; border-radius: 5px; border: 1px solid var(--wb-blue); background: var(--wb-blue); color: white; font-size: 11px; font-weight: 700; cursor: pointer; }
+  .country-compare-btn.added { background: white; color: var(--wb-blue); }
+  .country-profile-btn { padding: 5px 8px; border-radius: 5px; border: 1px solid var(--border); background: white; color: var(--text); font-size: 11px; font-weight: 700; cursor: pointer; }
+  .country-profile-btn:hover { background: var(--wb-light); }
+
+  /* Profile view */
+  #view-profile { flex-direction: column; padding: 20px; overflow-y: auto; gap: 16px; }
+  .profile-topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .profile-title-row { display: flex; align-items: flex-start; gap: 12px; }
+  .profile-topbar h2 { font-size: 20px; color: var(--wb-blue); }
+  .profile-back-btn { width: 32px; height: 32px; border-radius: 6px; border: 1px solid var(--border); background: white; color: var(--wb-blue); font-size: 18px; font-weight: 800; cursor: pointer; line-height: 1; }
+  .profile-back-btn:hover { background: var(--wb-light); }
+  .profile-page-grid { display: grid; grid-template-columns: minmax(420px, 1.3fr) minmax(320px, .7fr); gap: 16px; }
+  .profile-card { background: white; border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+  .profile-map-card { min-height: 360px; display: flex; flex-direction: column; gap: 10px; }
+  #profile-mini-map { width: 100%; min-height: 300px; flex: 1; background: #e8f0f8; border: 1px solid var(--border); border-radius: var(--radius); cursor: grab; }
+  #profile-mini-map:active { cursor: grabbing; }
+  .profile-meta { color: var(--text-muted); font-size: 13px; margin-top: 4px; }
+
+  /* Trend view */
+  #view-trend { flex-direction: column; padding: 20px; overflow-y: auto; gap: 20px; }
+  .trend-header h2 { font-size: 18px; font-weight: 700; color: var(--wb-blue); }
+  .trend-header p { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .trend-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+  .trend-card { background: white; border-radius: var(--radius); border: 1px solid var(--border); padding: 16px; }
+  .trend-card h4 { font-size: 13px; font-weight: 700; color: var(--wb-blue); margin-bottom: 12px; }
+  .trend-spark { height: 60px; display: flex; align-items: flex-end; gap: 4px; }
+  .spark-bar { flex: 1; border-radius: 3px 3px 0 0; transition: height .4s; cursor: default; position: relative; }
+  .spark-bar:hover::after {
+    content: attr(data-tip); position: absolute; bottom: 110%; left: 50%; transform: translateX(-50%);
+    background: #333; color: white; padding: 3px 7px; border-radius: 4px; font-size: 10px; white-space: nowrap; pointer-events: none;
+  }
+  .trend-meta { display: flex; justify-content: space-between; margin-top: 8px; font-size: 11px; color: var(--text-muted); }
+  .trend-change { font-weight: 700; font-size: 13px; }
+  .change-up { color: #1e7e34; }
+  .change-down { color: #c62828; }
+  .change-flat { color: var(--text-muted); }
+
+  /* Incident history */
+  .incident-history { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+  .incident-history h5 { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); margin-bottom: 8px; }
+  .incident-item { padding: 8px 10px; background: #fff8f0; border-left: 3px solid var(--wb-orange); border-radius: 0 5px 5px 0; margin-bottom: 8px; font-size: 11px; line-height: 1.45; }
+  .incident-item strong { color: #b85000; display: block; margin-bottom: 3px; }
+  .incident-impact { color: var(--text); }
+  .incident-source { margin-top: 4px; color: var(--text-muted); font-size: 10px; }
+  .incident-source a { color: var(--wb-blue-mid); text-decoration: none; font-weight: 700; }
+  .incident-empty { font-size: 11px; color: var(--text-muted); font-style: italic; }
+
+  /* Key Metrics view */
+  #view-metrics { flex-direction: column; padding: 20px; overflow-y: auto; gap: 20px; }
+  .metrics-header h2 { font-size: 18px; font-weight: 700; color: var(--wb-blue); }
+  .metrics-header p { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .metrics-summary { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+  .summary-card {
+    background: white; border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px; text-align: center;
+  }
+  .summary-card .big-num { font-size: 32px; font-weight: 800; color: var(--wb-blue); line-height: 1.2; }
+  .summary-card .big-label { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+  .chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .chart-card { background: white; border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+  .chart-card h3 { font-size: 14px; font-weight: 700; color: var(--wb-blue); margin-bottom: 12px; }
+  .chart-card canvas { width: 100% !important; max-height: 300px; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #aaa; }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .sidebar { width: 200px; }
+    #country-panel { width: 280px; }
+    .gap-grid { grid-template-columns: 1fr; }
+    .gc-pillars { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .profile-page-grid { grid-template-columns: 1fr; }
+    .chart-row { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 650px) { .sidebar { display: none; } }
+
+  @media print {
+    body { background: white; display: block; }
+    header, .sidebar, .tabs, .btn-secondary, .map-footer, #country-panel, #tooltip { display: none !important; }
+    .app-body, .map-area, .views, #view-compare { display: block !important; overflow: visible !important; height: auto !important; }
+    .view { display: none !important; }
+    #view-compare { display: block !important; padding: 0 !important; }
+    .compare-header { display: block; margin-bottom: 16px; }
+    .compare-content { gap: 14px; }
+    .radar-wrap, .compare-table-wrap { break-inside: avoid; box-shadow: none; }
+    .compare-table { font-size: 10px; }
+    @page { size: landscape; margin: 12mm; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">🛡️</div>
+    <div class="logo-text">
+      <h1>Cybersecurity North Star</h1>
+      <div class="subtitle">World Bank Digital Development · Interactive Capacity Map</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <span class="source-badge">ITU GCI 2024 · World Bank WDI</span>
+    <span class="year-badge">GCI 2024</span>
+  </div>
+</header>
+
+<!-- Tooltip -->
+<div id="tooltip"></div>
+
+<!-- App Body -->
+<div class="app-body">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <h3>Color Map By</h3>
+      <select class="pillar-select" id="pillar-select">
+        <option value="composite">Overall GCI Score (0–100)</option>
+        <option value="legal">Legal Measures (0–20)</option>
+        <option value="technical">Technical Measures (0–20)</option>
+        <option value="organizational">Organizational Measures (0–20)</option>
+        <option value="capacity">Capacity Development (0–20)</option>
+        <option value="cooperation">Cooperation (0–20)</option>
+      </select>
+    </div>
+
+    <div class="sidebar-section">
+      <h3>Filter by Region</h3>
+      <div class="region-pills" id="region-pills">
+        <span class="pill active" data-region="all">All</span>
+        <span class="pill" data-region="SSA">Sub-Saharan Africa</span>
+        <span class="pill" data-region="MENA">Middle East &amp; N. Africa</span>
+        <span class="pill" data-region="EAP">East Asia &amp; Pacific</span>
+        <span class="pill" data-region="SAR">South Asia</span>
+        <span class="pill" data-region="LAC">Latin America &amp; Caribbean</span>
+        <span class="pill" data-region="ECA">Europe &amp; Central Asia</span>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <h3>Filter by GCI Tier</h3>
+      <button class="filter-btn active" data-tier="all">All Tiers</button>
+      <button class="filter-btn" data-tier="T1">Tier 1 · Role-Modelling (95–100)</button>
+      <button class="filter-btn" data-tier="T2">Tier 2 · Advancing (85–95)</button>
+      <button class="filter-btn" data-tier="T3">Tier 3 · Establishing (55–85)</button>
+      <button class="filter-btn" data-tier="T4">Tier 4 · Evolving (20–55)</button>
+      <button class="filter-btn" data-tier="T5">Tier 5 · Building (&lt;20)</button>
+    </div>
+
+    <div class="sidebar-section">
+      <h3>GCI Tier Legend</h3>
+      <div class="legend-row"><div class="legend-swatch" style="background:var(--tier1)"></div><span>T1 Role-Modelling (95–100)</span></div>
+      <div class="legend-row"><div class="legend-swatch" style="background:var(--tier2)"></div><span>T2 Advancing (85–95)</span></div>
+      <div class="legend-row"><div class="legend-swatch" style="background:var(--tier3)"></div><span>T3 Establishing (55–85)</span></div>
+      <div class="legend-row"><div class="legend-swatch" style="background:var(--tier4)"></div><span>T4 Evolving (20–55)</span></div>
+      <div class="legend-row"><div class="legend-swatch" style="background:var(--tier5)"></div><span>T5 Building (&lt;20)</span></div>
+      <div class="legend-row"><div class="legend-swatch" style="background:#d9dfe6"></div><span>Not in dataset</span></div>
+    </div>
+
+    <div class="sidebar-section">
+      <h3>Compare Countries</h3>
+      <div class="compare-list" id="compare-list">
+        <span class="compare-empty">Add countries from the map or list</span>
+      </div>
+      <button class="btn-compare" id="btn-open-compare">Open Comparison →</button>
+    </div>
+  </aside>
+
+  <!-- Main Area -->
+  <div class="map-area">
+    <div class="tabs">
+      <button class="tab active" data-view="map">🗺 World Map</button>
+      <button class="tab" data-view="metrics">📊 Key Metrics</button>
+      <button class="tab" data-view="compare">⚖️ Compare</button>
+      <button class="tab" data-view="gaps">📋 Country List</button>
+      <button class="tab" data-view="trend">📈 Trend</button>
+    </div>
+
+    <div class="views">
+      <!-- Map view -->
+      <div class="view active" id="view-map">
+        <div id="map-svg-container"><svg id="map-svg"></svg></div>
+        <div id="country-panel">
+          <div class="panel-header">
+            <div>
+              <h2 id="panel-name">Country Profile</h2>
+              <div class="region-tag" id="panel-region">Select a country on the map</div>
+            </div>
+            <button class="panel-close" id="panel-close">✕</button>
+          </div>
+          <div class="panel-body" id="panel-body">
+            <div class="panel-empty">Click a highlighted country to view its cybersecurity capacity profile.</div>
+          </div>
+        </div>
+        <div class="map-footer">
+          <span id="map-status">Hover over a country to see data. Click to open profile. Data: ITU GCI 2024, World Bank WDI.</span>
+          <div class="zoom-controls">
+            <button class="zoom-btn" id="zoom-in">+</button>
+            <button class="zoom-btn" id="zoom-reset">⌂</button>
+            <button class="zoom-btn" id="zoom-out">−</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Key Metrics view -->
+      <div class="view" id="view-metrics">
+        <div class="metrics-header">
+          <h2>Key Metrics Overview</h2>
+          <p>Aggregate statistics across all 50 countries in the dataset. Data: ITU GCI 2024, World Bank WDI.</p>
+        </div>
+        <div id="metrics-summary" class="metrics-summary"></div>
+        <div class="chart-row">
+          <div class="chart-card">
+            <h3>GCI Tier Distribution</h3>
+            <canvas id="chart-tier-dist"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>Average GCI Score by Region</h3>
+            <canvas id="chart-region-avg"></canvas>
+          </div>
+        </div>
+        <div class="chart-row">
+          <div class="chart-card">
+            <h3>Pillar Averages (out of 20)</h3>
+            <canvas id="chart-pillar-avg"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>CSIRT Coverage by Region</h3>
+            <canvas id="chart-csirt-region"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Compare view -->
+      <div class="view" id="view-compare">
+        <div class="compare-header">
+          <div>
+            <h2>Country Comparison</h2>
+            <p>Radar chart across all 5 GCI pillars (each scored 0–20)</p>
+          </div>
+          <div class="compare-actions">
+            <button class="btn-danger" id="btn-clear-compare" onclick="clearComparison()" disabled>Clear All</button>
+            <button class="btn-secondary" onclick="exportCompareReport()">Export Report</button>
+          </div>
+        </div>
+        <div id="compare-content"></div>
+      </div>
+
+      <!-- Country list view -->
+      <div class="view" id="view-gaps">
+        <div class="gaps-header">
+          <h2>Country List</h2>
+          <p>All 50 countries ranked by selected metric. Click a country for detailed profile.</p>
+        </div>
+        <div class="country-search">
+          <input id="country-search-input" type="search" placeholder="Search country by name, ISO code, or region...">
+          <span id="country-search-status" class="country-search-status"></span>
+        </div>
+        <div id="gap-grid" class="gap-grid"></div>
+      </div>
+
+      <!-- Trend view -->
+      <div class="view" id="view-trend">
+        <div class="trend-header">
+          <h2>GCI Trend &amp; Incident History</h2>
+          <p>Estimated GCI trajectory 2019–2024 with verified public cyber incident cases. Note: historical pillar data estimated from GCI 2020 and 2024 editions.</p>
+        </div>
+        <div id="trend-grid" class="trend-grid"></div>
+      </div>
+
+      <!-- Profile view -->
+      <div class="view" id="view-profile">
+        <div id="profile-content"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════
+//  DATA — 50 developing countries
+//  Sources: ITU GCI 2024 (verified scores), World Bank WDI
+//  GCI 2024: each pillar 0–20, overall 0–100
+//  Tier thresholds (ITU official): T1 ≥95, T2 85–<95, T3 55–<85, T4 20–<55, T5 <20
+// ════════════════════════════════════════════════════════════
+const COUNTRIES = [
+  // SSA — Sub-Saharan Africa
+  // GCI 2024 Tier 1 countries in Africa: Egypt(100), Mauritius(100), Ghana(99.27), Tanzania(99.26), Kenya(98.59), Rwanda(98.08), Morocco(97.50)
+  // Tier 2: Zambia(92.59), Tier 3: Uganda(82.94), Nigeria(82.40), Cote d'Ivoire, Senegal(T3)
+  { name:"Rwanda",         iso:"RWA", region:"SSA",  legal:19.5, tech:19.0, org:19.8, cap:19.5, coop:20.0, composite:98.08, tier:"T1", csirt:true,  wb:true,  income:"Low", internetPct:33.0, pop:14.1,  trend:[38,52,68,80,90,98] },
+  { name:"Ghana",          iso:"GHA", region:"SSA",  legal:20.0, tech:19.5, org:20.0, cap:19.5, coop:20.0, composite:99.27, tier:"T1", csirt:true,  wb:true,  income:"LMIC", internetPct:68.2, pop:34.1,  trend:[30,48,65,78,87,99] },
+  { name:"Kenya",          iso:"KEN", region:"SSA",  legal:20.0, tech:19.0, org:20.0, cap:19.5, coop:20.0, composite:98.59, tier:"T1", csirt:true,  wb:true,  income:"LMIC", internetPct:40.0, pop:55.1,  trend:[28,44,60,75,88,99] },
+  { name:"Tanzania",       iso:"TZA", region:"SSA",  legal:20.0, tech:19.7, org:20.0, cap:19.6, coop:20.0, composite:99.26, tier:"T1", csirt:true,  wb:true,  income:"LMIC", internetPct:33.0, pop:67.4,  trend:[15,28,48,70,88,99] },
+  { name:"Nigeria",        iso:"NGA", region:"SSA",  legal:17.5, tech:16.0, org:16.5, cap:14.5, coop:17.9, composite:82.40, tier:"T3", csirt:true,  wb:true,  income:"LMIC", internetPct:55.4, pop:223.8, trend:[22,35,50,65,75,82] },
+  { name:"Senegal",        iso:"SEN", region:"SSA",  legal:16.5, tech:14.5, org:15.0, cap:14.0, coop:16.0, composite:76.00, tier:"T3", csirt:true,  wb:true,  income:"LMIC", internetPct:58.0, pop:18.1,  trend:[18,30,45,58,68,76] },
+  { name:"Ethiopia",       iso:"ETH", region:"SSA",  legal:12.0, tech:10.0, org:11.0, cap:9.0,  coop:10.0, composite:52.00, tier:"T4", csirt:false, wb:false, income:"Low", internetPct:17.0, pop:126.5, trend:[12,18,28,38,45,52] },
+  { name:"Uganda",         iso:"UGA", region:"SSA",  legal:17.5, tech:16.5, org:16.5, cap:15.5, coop:17.0, composite:82.94, tier:"T3", csirt:true,  wb:true,  income:"Low", internetPct:14.0, pop:48.6,  trend:[14,24,40,58,72,83] },
+  { name:"Cameroon",       iso:"CMR", region:"SSA",  legal:12.0, tech:10.0, org:10.5, cap:9.0,  coop:11.0, composite:52.50, tier:"T4", csirt:false, wb:false, income:"LMIC", internetPct:36.0, pop:28.6,  trend:[10,16,25,35,44,53] },
+  { name:"Côte d'Ivoire",  iso:"CIV", region:"SSA",  legal:16.0, tech:14.5, org:15.5, cap:14.0, coop:16.0, composite:76.00, tier:"T3", csirt:true,  wb:true,  income:"LMIC", internetPct:45.0, pop:28.9,  trend:[16,26,40,55,66,76] },
+  { name:"Mozambique",     iso:"MOZ", region:"SSA",  legal:10.0, tech:8.0,  org:9.0,  cap:7.5,  coop:9.5,  composite:44.00, tier:"T4", csirt:false, wb:true,  income:"Low", internetPct:21.5, pop:33.9,  trend:[8,12,20,30,38,44] },
+  { name:"Zambia",         iso:"ZMB", region:"SSA",  legal:19.0, tech:18.0, org:18.5, cap:18.0, coop:19.0, composite:92.59, tier:"T2", csirt:true,  wb:false, income:"LMIC", internetPct:27.0, pop:20.6,  trend:[10,20,38,58,78,93] },
+  { name:"Zimbabwe",       iso:"ZWE", region:"SSA",  legal:11.0, tech:9.0,  org:10.0, cap:8.5,  coop:10.0, composite:48.50, tier:"T4", csirt:false, wb:false, income:"LMIC", internetPct:35.0, pop:16.7,  trend:[8,12,22,32,40,49] },
+  { name:"Madagascar",     iso:"MDG", region:"SSA",  legal:8.0,  tech:6.0,  org:7.0,  cap:5.5,  coop:7.0,  composite:33.50, tier:"T4", csirt:false, wb:false, income:"Low", internetPct:15.0, pop:30.3,  trend:[5,8,14,22,28,34] },
+  { name:"Mali",           iso:"MLI", region:"SSA",  legal:7.0,  tech:5.0,  org:6.0,  cap:4.5,  coop:6.5,  composite:29.00, tier:"T4", csirt:false, wb:false, income:"Low", internetPct:33.0, pop:23.3,  trend:[4,7,12,18,24,29] },
+  { name:"Niger",          iso:"NER", region:"SSA",  legal:6.0,  tech:4.0,  org:5.0,  cap:3.5,  coop:5.5,  composite:24.00, tier:"T4", csirt:false, wb:false, income:"Low", internetPct:11.5, pop:27.2,  trend:[3,5,9,15,20,24] },
+  { name:"Chad",           iso:"TCD", region:"SSA",  legal:5.0,  tech:3.5,  org:4.0,  cap:3.0,  coop:4.5,  composite:20.00, tier:"T4", csirt:false, wb:false, income:"Low", internetPct:16.0, pop:18.3,  trend:[3,5,8,12,16,20] },
+
+  // MENA — Middle East & North Africa
+  { name:"Morocco",        iso:"MAR", region:"MENA", legal:20.0, tech:19.0, org:19.5, cap:19.0, coop:20.0, composite:97.50, tier:"T1", csirt:true,  wb:true,  income:"LMIC", internetPct:88.1, pop:37.8,  trend:[34,50,68,82,92,98] },
+  { name:"Egypt",          iso:"EGY", region:"MENA", legal:20.0, tech:20.0, org:20.0, cap:20.0, coop:20.0, composite:100.0, tier:"T1", csirt:true,  wb:true,  income:"LMIC", internetPct:72.2, pop:112.7, trend:[28,45,65,82,95,100] },
+  { name:"Jordan",         iso:"JOR", region:"MENA", legal:18.5, tech:17.0, org:17.5, cap:16.5, coop:18.0, composite:87.50, tier:"T2", csirt:true,  wb:true,  income:"UMIC", internetPct:83.0, pop:11.4,  trend:[26,38,55,70,80,88] },
+  { name:"Tunisia",        iso:"TUN", region:"MENA", legal:17.0, tech:16.0, org:16.5, cap:15.5, coop:17.0, composite:82.00, tier:"T3", csirt:true,  wb:false, income:"LMIC", internetPct:71.9, pop:12.5,  trend:[24,36,50,64,74,82] },
+  { name:"Lebanon",        iso:"LBN", region:"MENA", legal:13.0, tech:11.0, org:12.0, cap:10.5, coop:12.5, composite:59.00, tier:"T3", csirt:false, wb:false, income:"LMIC", internetPct:87.0, pop:5.5,   trend:[20,28,38,48,54,59] },
+  { name:"Iraq",           iso:"IRQ", region:"MENA", legal:10.0, tech:8.5,  org:9.0,  cap:7.5,  coop:9.0,  composite:44.00, tier:"T4", csirt:false, wb:false, income:"UMIC", internetPct:75.0, pop:44.5,  trend:[8,12,20,30,38,44] },
+
+  // EAP — East Asia & Pacific
+  { name:"Indonesia",      iso:"IDN", region:"EAP",  legal:20.0, tech:20.0, org:20.0, cap:20.0, coop:20.0, composite:100.0, tier:"T1", csirt:true,  wb:true,  income:"UMIC", internetPct:66.5, pop:277.5, trend:[32,48,65,82,95,100] },
+  { name:"Philippines",    iso:"PHL", region:"EAP",  legal:18.0, tech:17.5, org:18.0, cap:17.0, coop:18.5, composite:89.00, tier:"T2", csirt:true,  wb:true,  income:"LMIC", internetPct:52.7, pop:117.3, trend:[28,42,58,72,82,89] },
+  { name:"Vietnam",        iso:"VNM", region:"EAP",  legal:20.0, tech:20.0, org:20.0, cap:19.7, coop:20.0, composite:99.74, tier:"T1", csirt:true,  wb:false, income:"LMIC", internetPct:79.1, pop:99.5,  trend:[26,40,58,78,92,100] },
+  { name:"Cambodia",       iso:"KHM", region:"EAP",  legal:13.0, tech:11.0, org:12.0, cap:10.0, coop:12.0, composite:58.00, tier:"T3", csirt:false, wb:true,  income:"LMIC", internetPct:60.0, pop:17.0,  trend:[14,22,32,42,50,58] },
+  { name:"Myanmar",        iso:"MMR", region:"EAP",  legal:8.0,  tech:6.0,  org:7.0,  cap:5.5,  coop:6.5,  composite:33.00, tier:"T4", csirt:false, wb:false, income:"LMIC", internetPct:44.0, pop:54.1,  trend:[8,12,18,24,28,33] },
+  { name:"Laos",           iso:"LAO", region:"EAP",  legal:9.0,  tech:7.0,  org:8.0,  cap:6.5,  coop:7.5,  composite:38.00, tier:"T4", csirt:false, wb:false, income:"LMIC", internetPct:62.0, pop:7.6,   trend:[8,12,18,26,32,38] },
+  { name:"Papua New Guinea",iso:"PNG",region:"EAP",  legal:7.5,  tech:5.5,  org:6.0,  cap:5.0,  coop:6.0,  composite:30.00, tier:"T4", csirt:false, wb:true,  income:"LMIC", internetPct:32.0, pop:10.4,  trend:[6,9,14,20,25,30] },
+
+  // SAR — South Asia
+  { name:"Bangladesh",     iso:"BGD", region:"SAR",  legal:15.5, tech:14.0, org:14.5, cap:13.0, coop:15.0, composite:72.00, tier:"T3", csirt:true,  wb:true,  income:"LMIC", internetPct:38.9, pop:172.9, trend:[14,24,38,52,64,72] },
+  { name:"Pakistan",       iso:"PAK", region:"SAR",  legal:16.0, tech:14.5, org:15.0, cap:14.0, coop:16.0, composite:75.50, tier:"T3", csirt:true,  wb:false, income:"LMIC", internetPct:36.0, pop:240.5, trend:[18,30,45,58,68,76] },
+  { name:"Nepal",          iso:"NPL", region:"SAR",  legal:11.0, tech:9.0,  org:10.0, cap:8.5,  coop:10.5, composite:49.00, tier:"T4", csirt:false, wb:true,  income:"LMIC", internetPct:43.0, pop:30.9,  trend:[10,15,24,34,42,49] },
+  { name:"Sri Lanka",      iso:"LKA", region:"SAR",  legal:17.0, tech:15.5, org:16.0, cap:15.0, coop:17.0, composite:80.50, tier:"T3", csirt:true,  wb:true,  income:"LMIC", internetPct:47.0, pop:22.2,  trend:[22,34,48,62,72,81] },
+
+  // LAC — Latin America & Caribbean
+  { name:"Brazil",         iso:"BRA", region:"LAC",  legal:20.0, tech:19.5, org:19.5, cap:19.0, coop:19.5, composite:97.50, tier:"T1", csirt:true,  wb:true,  income:"UMIC", internetPct:84.0, pop:216.4, trend:[38,52,68,82,92,98] },
+  { name:"Mexico",         iso:"MEX", region:"LAC",  legal:18.5, tech:17.5, org:18.0, cap:17.0, coop:18.0, composite:89.00, tier:"T2", csirt:true,  wb:false, income:"UMIC", internetPct:76.0, pop:128.9, trend:[30,44,58,72,82,89] },
+  { name:"Colombia",       iso:"COL", region:"LAC",  legal:18.0, tech:17.0, org:17.5, cap:16.5, coop:17.5, composite:86.50, tier:"T2", csirt:true,  wb:true,  income:"UMIC", internetPct:73.0, pop:52.1,  trend:[28,40,55,68,78,87] },
+  { name:"Peru",           iso:"PER", region:"LAC",  legal:16.5, tech:15.0, org:15.5, cap:14.5, coop:16.0, composite:77.50, tier:"T3", csirt:true,  wb:false, income:"UMIC", internetPct:71.0, pop:34.0,  trend:[22,34,48,60,70,78] },
+  { name:"Ecuador",        iso:"ECU", region:"LAC",  legal:15.0, tech:13.5, org:14.0, cap:13.0, coop:14.5, composite:70.00, tier:"T3", csirt:true,  wb:false, income:"UMIC", internetPct:76.0, pop:18.2,  trend:[18,28,40,52,62,70] },
+  { name:"Bolivia",        iso:"BOL", region:"LAC",  legal:11.0, tech:9.0,  org:10.0, cap:8.5,  coop:10.5, composite:49.00, tier:"T4", csirt:false, wb:false, income:"LMIC", internetPct:66.0, pop:12.4,  trend:[12,18,26,36,42,49] },
+  { name:"Paraguay",       iso:"PRY", region:"LAC",  legal:14.0, tech:12.5, org:13.0, cap:12.0, coop:13.5, composite:65.00, tier:"T3", csirt:false, wb:false, income:"UMIC", internetPct:74.0, pop:6.9,   trend:[14,22,34,48,58,65] },
+  { name:"Guatemala",      iso:"GTM", region:"LAC",  legal:12.0, tech:10.5, org:11.0, cap:10.0, coop:11.5, composite:55.00, tier:"T3", csirt:false, wb:true,  income:"UMIC", internetPct:51.0, pop:17.6,  trend:[13,20,30,40,48,55] },
+  { name:"Honduras",       iso:"HND", region:"LAC",  legal:10.0, tech:8.5,  org:9.0,  cap:8.0,  coop:9.5,  composite:45.00, tier:"T4", csirt:false, wb:false, income:"LMIC", internetPct:49.0, pop:10.4,  trend:[10,15,22,32,38,45] },
+
+  // ECA — Europe & Central Asia
+  { name:"Ukraine",        iso:"UKR", region:"ECA",  legal:19.5, tech:19.0, org:19.5, cap:18.5, coop:19.5, composite:96.00, tier:"T1", csirt:true,  wb:true,  income:"LMIC", internetPct:79.0, pop:37.0,  trend:[32,48,65,80,90,96] },
+  { name:"Georgia",        iso:"GEO", region:"ECA",  legal:19.0, tech:18.5, org:19.0, cap:18.0, coop:19.0, composite:93.50, tier:"T2", csirt:true,  wb:true,  income:"UMIC", internetPct:76.0, pop:3.7,   trend:[34,48,62,78,88,94] },
+  { name:"Armenia",        iso:"ARM", region:"ECA",  legal:17.0, tech:16.0, org:16.5, cap:15.5, coop:17.0, composite:82.00, tier:"T3", csirt:true,  wb:false, income:"UMIC", internetPct:72.0, pop:2.8,   trend:[26,38,50,64,74,82] },
+  { name:"Moldova",        iso:"MDA", region:"ECA",  legal:16.5, tech:15.0, org:15.5, cap:14.5, coop:16.0, composite:77.50, tier:"T3", csirt:true,  wb:true,  income:"UMIC", internetPct:76.0, pop:2.5,   trend:[22,32,45,58,68,78] },
+  { name:"Uzbekistan",     iso:"UZB", region:"ECA",  legal:16.0, tech:14.5, org:15.0, cap:14.0, coop:15.5, composite:75.00, tier:"T3", csirt:true,  wb:true,  income:"LMIC", internetPct:77.0, pop:36.4,  trend:[16,26,40,55,66,75] },
+  { name:"Kazakhstan",     iso:"KAZ", region:"ECA",  legal:18.5, tech:17.5, org:18.0, cap:17.0, coop:18.0, composite:89.00, tier:"T2", csirt:true,  wb:false, income:"UMIC", internetPct:92.0, pop:19.8,  trend:[28,42,58,72,82,89] },
+  { name:"Kyrgyzstan",     iso:"KGZ", region:"ECA",  legal:13.0, tech:11.5, org:12.0, cap:11.0, coop:12.5, composite:60.00, tier:"T3", csirt:false, wb:true,  income:"LMIC", internetPct:72.0, pop:7.1,   trend:[15,22,32,44,52,60] },
+];
+
+// Build lookup
+const countryByISO = {};
+COUNTRIES.forEach(c => { countryByISO[c.iso] = c; });
+
+// Pillar config (each scored 0-20)
+const PILLARS = [
+  { key:"legal", label:"Legal Measures",       color:"#1a6b3c" },
+  { key:"tech",  label:"Technical Measures",   color:"#4575b4" },
+  { key:"org",   label:"Organizational",       color:"#f4a939" },
+  { key:"cap",   label:"Capacity Development", color:"#e8773a" },
+  { key:"coop",  label:"Cooperation",          color:"#8e44ad" },
+];
+
+// Gap recommendations
+const GAP_RECS = {
+  legal:  "Prioritize comprehensive cybersecurity legislation, data protection regulation, and legal mandate for national CSIRT.",
+  tech:   "Invest in establishing or strengthening CSIRT/CERT, SOC capacity, and critical infrastructure protection frameworks.",
+  org:    "Develop or update national cybersecurity strategy, sector-specific policies, and coordinated incident response plans.",
+  cap:    "Expand cybersecurity workforce training, university programs, awareness campaigns, and public–private capacity building.",
+  coop:   "Strengthen regional/international partnerships, join FIRST network, sign bilateral MoUs, increase threat-intelligence sharing.",
+};
+
+// Incident history (verified sources)
+const INCIDENT_HISTORY = {
+  IDN: [{ date:"June 2024", title:"National Data Center ransomware attack", impact:"Disrupted immigration and public services; attackers demanded US$8M ransom.", loss:"US$8M demanded (not confirmed paid)", impactMetric:"Immigration and public services disrupted; unbacked-up data deleted.", sources:[{ name:"CSIS timeline", url:"https://www.csis.org/programs/strategic-technologies-program/significant-cyber-incidents" },{ name:"Jakarta Post", url:"https://www.thejakartapost.com/indonesia/2024/06/25/govt-refuses-to-pay-8-million-after-ransomware-attack-on-national-data-center.html" }] }],
+  MAR: [{ date:"April 2025", title:"CNSS social security data breach", impact:"Cyberattack on Morocco's national social security fund exposed sensitive data across millions of private-sector workers.", loss:"No confirmed monetary loss", impactMetric:"Sensitive data of millions of workers exposed.", sources:[{ name:"AP", url:"https://apnews.com/article/753ce01484ceb8d1ec02459910285235" },{ name:"CSIS timeline", url:"https://www.csis.org/programs/strategic-technologies-program/significant-cyber-incidents" }] }],
+  KAZ: [{ date:"January 2025", title:"Spearphishing against diplomatic entities", impact:"Suspected Russian hackers used malicious documents for espionage with backdoor malware.", loss:"No confirmed monetary loss", impactMetric:"Diplomatic entities targeted for espionage.", sources:[{ name:"CyberScoop", url:"https://cyberscoop.com/fancy-bear-kazakhstan-russia-sekoia/" },{ name:"CSIS timeline", url:"https://www.csis.org/programs/strategic-technologies-program/significant-cyber-incidents" }] }],
+  UZB: [{ date:"November 2023", title:"Espionage campaign targeting Uzbekistan", impact:"Chinese-linked hackers accessed systems via phishing, indicating government exposure to foreign cyber espionage.", loss:"No confirmed monetary loss", impactMetric:"Government systems exposed to foreign espionage.", sources:[{ name:"The Hacker News", url:"https://thehackernews.com/2023/12/chinese-hackers-using-sugargh0st-rat-to.html" },{ name:"CSIS timeline", url:"https://www.csis.org/programs/strategic-technologies-program/significant-cyber-incidents" }] }],
+  IRQ: [{ date:"June 2025", title:"Long-running espionage on government networks", impact:"Iranian-linked group maintained persistent access to Kurdish and Iraqi government networks for years.", loss:"No confirmed monetary loss", impactMetric:"Persistent government network access over multiple years.", sources:[{ name:"CSIS timeline", url:"https://www.csis.org/programs/strategic-technologies-program/significant-cyber-incidents" }] }],
+  GEO: [{ date:"February 2024", title:"Embassy webmail espionage campaign", impact:"Russian hackers exploited webmail vulnerability to collect political and military information from embassy systems.", loss:"No confirmed monetary loss", impactMetric:"Political and military intelligence collection.", sources:[{ name:"CSIS timeline", url:"https://www.csis.org/programs/strategic-technologies-program/significant-cyber-incidents" }] }],
+  NGA: [{ date:"2024", title:"Widespread ransomware and fraud operations", impact:"Nigeria remained a major hub for cybercrime with significant BEC and ransomware activity targeting domestic and international targets.", loss:"Estimated billions in aggregate losses", impactMetric:"Ongoing BEC and ransomware affecting financial services.", sources:[{ name:"World Bank Cybersecurity Economics", url:"https://www.worldbank.org/en/topic/digital/publication/Cybersecurity-Economics-for-Emerging-Markets" }] }],
+};
+
+// ════════════════════════════════════════════════════════════
+//  STATE
+// ════════════════════════════════════════════════════════════
+let selectedPillar = "composite";
+let activeRegion = "all";
+let activeTier = "all";
+let compareList = [];
+let selectedCountry = null;
+let radarChart = null;
+let countrySearchQuery = "";
+let gdpLoaded = false;
+
+// ════════════════════════════════════════════════════════════
+//  UTILS
+// ════════════════════════════════════════════════════════════
+// Get the display score for a country
+function getScore(c, pillar) {
+  if (pillar === "composite") return c.composite;
+  const map = { legal:"legal", technical:"tech", organizational:"org", capacity:"cap", cooperation:"coop" };
+  return c[map[pillar]] ?? c.composite;
+}
+
+function selectedPillarInfo() {
+  const map = {
+    composite:      { key:"composite", label:"Overall GCI Score",     max:100, note:"ITU GCI 2024 composite score (5 pillars × 20 pts each)." },
+    legal:          { key:"legal",     label:"Legal Measures",        max:20 },
+    technical:      { key:"tech",      label:"Technical Measures",    max:20 },
+    organizational: { key:"org",       label:"Organizational",        max:20 },
+    capacity:       { key:"cap",       label:"Capacity Development",  max:20 },
+    cooperation:    { key:"coop",      label:"Cooperation",           max:20 },
+  };
+  return map[selectedPillar] || map.composite;
+}
+
+function regionLabel(r) {
+  return { SSA:"Sub-Saharan Africa", MENA:"Middle East & North Africa", EAP:"East Asia & Pacific", SAR:"South Asia", LAC:"Latin America & Caribbean", ECA:"Europe & Central Asia" }[r] || r;
+}
+
+function tierLabel(t) {
+  return { T1:"Tier 1 · Role-Modelling", T2:"Tier 2 · Advancing", T3:"Tier 3 · Establishing", T4:"Tier 4 · Evolving", T5:"Tier 5 · Building" }[t] || t;
+}
+
+function tierColor(t) {
+  return { T1:"var(--tier1)", T2:"var(--tier2)", T3:"var(--tier3)", T4:"var(--tier4)", T5:"var(--tier5)" }[t] || "#ccc";
+}
+
+function tierColorHex(t) {
+  return { T1:"#1a6b3c", T2:"#4575b4", T3:"#f4a939", T4:"#e8773a", T5:"#c0392b" }[t] || "#ccc";
+}
+
+function scoreColor(score) {
+  if (score == null) return "#ccc";
+  if (score >= 95) return "#1a6b3c";  // T1
+  if (score >= 85) return "#4575b4";  // T2
+  if (score >= 55) return "#f4a939";  // T3
+  if (score >= 20) return "#e8773a";  // T4
+  return "#c0392b";                   // T5
+}
+
+function formatGDP(v) {
+  if (v == null) return gdpLoaded ? "Unavailable" : "Loading...";
+  if (Math.abs(v) >= 1e12) return `$${(v/1e12).toFixed(2)}T`;
+  if (Math.abs(v) >= 1e9) return `$${(v/1e9).toFixed(1)}B`;
+  if (Math.abs(v) >= 1e6) return `$${(v/1e6).toFixed(1)}M`;
+  return `$${Math.round(v).toLocaleString()}`;
+}
+
+function matchesFilters(c) {
+  if (activeRegion !== "all" && c.region !== activeRegion) return false;
+  if (activeTier !== "all" && c.tier !== activeTier) return false;
+  return true;
+}
+
+function weakestPillar(c) {
+  return PILLARS.reduce((a, b) => c[a.key] < c[b.key] ? a : b);
+}
+
+function countryMatchesSearch(c, q) {
+  if (!q) return false;
+  const s = q.toLowerCase();
+  return [c.name, c.iso, c.region, regionLabel(c.region), c.tier, c.income].some(v => v.toLowerCase().includes(s));
+}
+
+function pillarStatusBadge(c, pk) {
+  if (pk === "tech") return `<span class="pillar-status ${c.csirt ? "good" : "alert"}">${c.csirt ? "CSIRT active" : "No CSIRT"}</span>`;
+  if (pk === "coop" && c.wb) return `<span class="pillar-status program">WB program</span>`;
+  return "";
+}
+
+function countryPillarChips(c) {
+  const short = { legal:"Legal", tech:"Tech", org:"Org", cap:"Capacity", coop:"Coop" };
+  return `<div class="gc-pillars">${PILLARS.map(p => `<div class="gc-pillar-chip"><span>${short[p.key]}</span><strong>${c[p.key]}</strong><span style="font-size:9px;color:var(--text-muted)">/20</span></div>`).join("")}</div>`;
+}
+
+// Metric cards for profile
+function metricsHTML(c) {
+  const yr = c.gdpYear ? ` (${c.gdpYear})` : "";
+  return `<div class="metric-grid">
+    <div class="metric-card">
+      <div class="metric-label">GDP (current US$)</div>
+      <div class="metric-value">${formatGDP(c.gdp)}</div>
+      <div class="metric-source">World Bank WDI${yr} · <a href="https://data.worldbank.org/indicator/NY.GDP.MKTP.CD" target="_blank">source</a></div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Internet Penetration</div>
+      <div class="metric-value">${c.internetPct != null ? c.internetPct + "%" : "N/A"}</div>
+      <div class="metric-source">ITU/WB WDI · <a href="https://data.worldbank.org/indicator/IT.NET.USER.ZS" target="_blank">source</a></div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Population (M)</div>
+      <div class="metric-value">${c.pop ? c.pop + "M" : "N/A"}</div>
+      <div class="metric-source">World Bank WDI · <a href="https://data.worldbank.org/indicator/SP.POP.TOTL" target="_blank">source</a></div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Income Group</div>
+      <div class="metric-value" style="font-size:13px">${c.income || "N/A"}</div>
+      <div class="metric-source">World Bank Classification</div>
+    </div>
+  </div>`;
+}
+
+function legacyIncidentHistoryHTML(c) {
+  return incidentHistoryHTML(c);
+  const incidents = INCIDENT_HISTORY[c.iso] || [];
+  if (!incidents.length) return `<div class="incident-history"><h5>Incident History</h5><div class="incident-empty">No verified public incident case in dataset.</div></div>`;
+  return `<div class="incident-history"><h5>Incident History</h5>${incidents.map(i => `<div class="incident-item"><strong>${i.date} · ${i.title}</strong><div class="incident-impact">${i.impact}</div><div class="incident-source">Source: <a href="${i.sourceUrl}" target="_blank">${i.sourceName}</a></div></div>`).join("")}</div>`;
+}
+
+function legacyCompareIncidentCell(c, field) {
+  return compareIncidentCell(c, field);
+  const incidents = INCIDENT_HISTORY[c.iso] || [];
+  const latest = incidents[0] || null;
+  if (field === "count") return String(incidents.length);
+  if (!latest) return "No verified case";
+  if (field === "latest") return `${latest.date}: ${latest.title}`;
+  if (field === "loss") return latest.loss || "Not reported";
+  if (field === "impact") return latest.impactMetric || latest.impact;
+  if (field === "source") return `<a href="${latest.sourceUrl}" target="_blank">${latest.sourceName}</a>`;
+  return "";
+}
+
+// ════════════════════════════════════════════════════════════
+//  MAP (D3 + TopoJSON)
+// ════════════════════════════════════════════════════════════
+function incidentSourceLinks(i) {
+  const sources = i.sources || [{ name:i.sourceName, url:i.sourceUrl }];
+  return sources.filter(s => s.name && s.url).map(s => `<a href="${s.url}" target="_blank">${s.name}</a>`).join(" | ");
+}
+
+function incidentHistoryHTML(c) {
+  const incidents = INCIDENT_HISTORY[c.iso] || [];
+  if (!incidents.length) {
+    return `<div class="incident-history"><h5>Incident History</h5><div class="incident-empty">No verified public incident case in dataset.</div></div>`;
+  }
+  return `<div class="incident-history"><h5>Incident History</h5>${incidents.map(i => `<div class="incident-item"><strong>${i.date} - ${i.title}</strong><div class="incident-impact">${i.impact}</div><div class="incident-source">Sources: ${incidentSourceLinks(i)}</div></div>`).join("")}</div>`;
+}
+
+function compareIncidentCell(c, field) {
+  const incidents = INCIDENT_HISTORY[c.iso] || [];
+  const latest = incidents[0] || null;
+  if (field === "count") return String(incidents.length);
+  if (!latest) return "No verified case";
+  if (field === "latest") return `${latest.date}: ${latest.title}`;
+  if (field === "loss") return latest.loss || "Not reported";
+  if (field === "impact") return latest.impactMetric || latest.impact;
+  if (field === "source") return incidentSourceLinks(latest);
+  return "";
+}
+
+const svg = d3.select("#map-svg");
+const g = svg.append("g");
+let worldFeatures = null;
+const countryFeatureByISO = {};
+const numericToISO3 = {
+  "646":"RWA","288":"GHA","404":"KEN","566":"NGA","686":"SEN","834":"TZA",
+  "231":"ETH","800":"UGA","120":"CMR","384":"CIV","508":"MOZ","894":"ZMB",
+  "504":"MAR","818":"EGY","400":"JOR","788":"TUN","422":"LBN","368":"IRQ",
+  "360":"IDN","608":"PHL","704":"VNM","050":"BGD","586":"PAK","524":"NPL",
+  "144":"LKA","076":"BRA","484":"MEX","170":"COL","604":"PER","218":"ECU",
+  "068":"BOL","600":"PRY","320":"GTM","340":"HND","804":"UKR","268":"GEO",
+  "051":"ARM","498":"MDA","860":"UZB","398":"KAZ","417":"KGZ","116":"KHM",
+  "104":"MMR","418":"LAO","598":"PNG","716":"ZWE","450":"MDG","466":"MLI",
+  "562":"NER","148":"TCD",
+};
+
+const projection = d3.geoNaturalEarth1().scale(140).translate([0, 0]);
+const path = d3.geoPath().projection(projection);
+const zoom = d3.zoom().scaleExtent([0.8, 8]).on("zoom", e => g.attr("transform", e.transform));
+svg.call(zoom);
+
+document.getElementById("zoom-in").onclick = () => svg.transition().call(zoom.scaleBy, 1.5);
+document.getElementById("zoom-out").onclick = () => svg.transition().call(zoom.scaleBy, 0.67);
+document.getElementById("zoom-reset").onclick = () => svg.transition().call(zoom.transform, d3.zoomIdentity);
+
+function resizeMap() {
+  if (!worldFeatures) return;
+  const container = document.getElementById("map-svg-container");
+  const panel = document.getElementById("country-panel");
+  const w = container.clientWidth, h = container.clientHeight;
+  const mapRight = Math.max(w - (panel ? panel.offsetWidth : 0) - 24, 260);
+  projection.fitExtent([[24, 24], [mapRight, h - 24]], worldFeatures);
+  g.selectAll(".country").attr("d", path);
+  svg.call(zoom.transform, d3.zoomIdentity);
+}
+
+fetch("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json")
+  .then(r => r.json())
+  .then(world => {
+    const countries = topojson.feature(world, world.objects.countries);
+    worldFeatures = countries;
+    countries.features.forEach(f => {
+      const iso3 = numericToISO3[String(f.id).padStart(3,"0")];
+      if (iso3) countryFeatureByISO[iso3] = f;
+    });
+    g.selectAll(".country").data(countries.features).enter().append("path")
+      .attr("class", "country").attr("d", path)
+      .attr("fill", d => {
+        const iso3 = numericToISO3[String(d.id).padStart(3,"0")];
+        const c = iso3 ? countryByISO[iso3] : null;
+        if (!c || !matchesFilters(c)) return "#d9dfe6";
+        return scoreColor(c.composite);
+      })
+      .attr("data-iso", d => numericToISO3[String(d.id).padStart(3,"0")] || "")
+      .on("mousemove", onCountryHover)
+      .on("mouseleave", () => { document.getElementById("tooltip").style.display = "none"; })
+      .on("click", onCountryClick);
+    resizeMap();
+    window.addEventListener("resize", resizeMap);
+  })
+  .catch(() => { document.getElementById("map-status").textContent = "⚠ Map data could not load."; });
+
+function updateMapColors() {
+  g.selectAll(".country")
+    .attr("fill", function() {
+      const iso3 = d3.select(this).attr("data-iso");
+      const c = iso3 ? countryByISO[iso3] : null;
+      if (!c || !matchesFilters(c)) return "#d9dfe6";
+      if (selectedPillar === "composite") return scoreColor(c.composite);
+      // For pillar view, scale 0-20 to color
+      const pScore = getScore(c, selectedPillar);
+      return scoreColor(pScore * 5); // scale to 0-100 for color
+    })
+    .classed("dimmed", function() {
+      const iso3 = d3.select(this).attr("data-iso");
+      const c = iso3 ? countryByISO[iso3] : null;
+      return c ? !matchesFilters(c) : false;
+    });
+}
+
+// ════════════════════════════════════════════════════════════
+//  TOOLTIP
+// ════════════════════════════════════════════════════════════
+const tooltip = document.getElementById("tooltip");
+
+function onCountryHover(event, d) {
+  const iso3 = d3.select(this).attr("data-iso");
+  const c = countryByISO[iso3];
+  if (!c) { tooltip.style.display = "none"; return; }
+
+  const pi = selectedPillarInfo();
+  const score = getScore(c, selectedPillar);
+
+  let pillarsHTML = PILLARS.map(p =>
+    `<div class="tt-pillar-row">
+      <span class="tt-pillar-label">${p.label}</span>
+      <div class="tt-bar-bg"><div class="tt-bar-fill" style="width:${(c[p.key]/20)*100}%;background:${p.color}"></div></div>
+      <span class="tt-val">${c[p.key]}/20</span>
+    </div>`
+  ).join("");
+
+  tooltip.innerHTML = `
+    <div class="tt-name">${c.name}</div>
+    <div><span class="tt-score">${c.composite}</span><span class="tt-tier">${tierLabel(c.tier)}</span></div>
+    <div style="font-size:10px;color:#9ab0cc">${pi.label}: ${score}${pi.max ? "/" + pi.max : ""}</div>
+    <div class="tt-pillars">${pillarsHTML}</div>
+    <div class="tt-meta">
+      <span>${c.csirt ? "✅ CSIRT operational" : "⛔ No CSIRT"} · ${c.wb ? "🌐 WB Program" : ""}</span>
+      <span>Internet: ${c.internetPct}% · Pop: ${c.pop}M · ${c.income}</span>
+      <span>GDP: ${formatGDP(c.gdp)}${c.gdpYear ? " (" + c.gdpYear + ")" : ""}</span>
+    </div>`;
+  tooltip.style.display = "block";
+  const x = Math.min(event.clientX + 14, window.innerWidth - 300);
+  const y = Math.min(event.clientY - 10, window.innerHeight - 320);
+  tooltip.style.left = x + "px";
+  tooltip.style.top = y + "px";
+}
+
+document.addEventListener("mousemove", e => {
+  if (tooltip.style.display === "block") {
+    tooltip.style.left = Math.min(e.clientX + 14, window.innerWidth - 300) + "px";
+    tooltip.style.top = Math.min(e.clientY - 10, window.innerHeight - 320) + "px";
+  }
+});
+
+// ════════════════════════════════════════════════════════════
+//  COUNTRY CLICK / PANEL
+// ════════════════════════════════════════════════════════════
+function onCountryClick(event, d) {
+  const iso3 = d3.select(this).attr("data-iso");
+  const c = countryByISO[iso3];
+  if (c) openCountryPanel(c);
+}
+
+function openCountryPanel(c) {
+  selectedCountry = c;
+  document.getElementById("panel-name").textContent = c.name;
+  document.getElementById("panel-region").textContent = [regionLabel(c.region), tierLabel(c.tier), c.wb ? "WB Program" : ""].filter(Boolean).join(" · ");
+
+  const pi = selectedPillarInfo();
+  const score = getScore(c, selectedPillar);
+  const weakest = weakestPillar(c);
+
+  document.getElementById("panel-body").innerHTML = `
+    <div class="score-badge">
+      <div class="score-number">${c.composite}</div>
+      <div class="score-meta">
+        <div class="score-tier" style="color:${tierColorHex(c.tier)}">${tierLabel(c.tier)}</div>
+        <div class="score-rank">GCI 2024 Overall (0–100)</div>
+      </div>
+      <div class="trend-arrow">${c.trend.at(-1) > c.trend.at(-2) ? "↗" : "→"}</div>
+    </div>
+
+    ${metricsHTML(c)}
+
+    <div class="pillars-section">
+      <h4>Pillar Breakdown (each 0–20)</h4>
+      ${PILLARS.map(p => `
+        <div class="pillar-bar-row">
+          <div class="pillar-bar-label">
+            <span class="pillar-bar-title">${p.label}${pillarStatusBadge(c, p.key)}</span>
+            <span class="pillar-score">${c[p.key]}/20</span>
+          </div>
+          <div class="pillar-bar-bg">
+            <div class="pillar-bar-fill" style="width:${(c[p.key]/20)*100}%;background:${p.color}"></div>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+
+    <div class="gap-section">
+      <h4>Priority Gap</h4>
+      <div class="gap-card">
+        <div class="gap-title">⚠ Weakest: ${weakest.label} (${c[weakest.key]}/20)</div>
+        ${GAP_RECS[weakest.key]}
+      </div>
+    </div>
+
+    ${incidentHistoryHTML(c)}
+
+    <div class="panel-actions">
+      <button class="btn-add-compare" onclick="addToCompare('${c.iso}')">+ Compare</button>
+      <button onclick="openCountryProfilePage(countryByISO['${c.iso}'])">Full Profile →</button>
+    </div>`;
+
+  document.getElementById("country-panel").classList.add("open");
+  document.getElementById("map-status").textContent = `Selected: ${c.name} — GCI 2024: ${c.composite}/100 (${tierLabel(c.tier)})`;
+}
+
+document.getElementById("panel-close").onclick = () => {
+  selectedCountry = null;
+  document.getElementById("panel-name").textContent = "Country Profile";
+  document.getElementById("panel-region").textContent = "Select a country on the map";
+  document.getElementById("panel-body").innerHTML = '<div class="panel-empty">Click a highlighted country to view its cybersecurity capacity profile.</div>';
+  document.getElementById("map-status").textContent = "Hover over a country to see data. Click to open profile.";
+};
+
+// ════════════════════════════════════════════════════════════
+//  PROFILE PAGE
+// ════════════════════════════════════════════════════════════
+function renderProfileMiniMap(c) {
+  const feature = countryFeatureByISO[c.iso];
+  const miniSvg = d3.select("#profile-mini-map");
+  miniSvg.selectAll("*").remove();
+  if (!worldFeatures) return;
+  const node = miniSvg.node();
+  const w = node.clientWidth || 420, h = node.clientHeight || 300;
+  miniSvg.attr("viewBox", `0 0 ${w} ${h}`);
+  const mp = d3.geoNaturalEarth1();
+  const mPath = d3.geoPath().projection(mp);
+  mp.fitExtent([[42, 42], [w-42, h-42]], feature || worldFeatures);
+  const mg = miniSvg.append("g");
+  mg.selectAll("path").data(worldFeatures.features).enter().append("path")
+    .attr("d", mPath).attr("fill", d => d === feature ? scoreColor(c.composite) : "#d9dfe6")
+    .attr("stroke", "#fff").attr("stroke-width", .5).attr("opacity", d => d === feature ? 1 : .65);
+  if (feature) {
+    mg.append("path").datum(feature).attr("d", mPath).attr("fill", "none").attr("stroke", "var(--wb-orange)").attr("stroke-width", 2.5);
+    const [cx, cy] = mPath.centroid(feature);
+    mg.append("circle").attr("cx", cx).attr("cy", cy).attr("r", 6).attr("fill", "var(--wb-orange)").attr("stroke", "white").attr("stroke-width", 2);
+  }
+  miniSvg.call(d3.zoom().scaleExtent([0.8, 12]).on("zoom", e => mg.attr("transform", e.transform)));
+}
+
+function openCountryProfilePage(c) {
+  selectedCountry = c;
+  const weakest = weakestPillar(c);
+
+  document.getElementById("profile-content").innerHTML = `
+    <div class="profile-topbar">
+      <div class="profile-title-row">
+        <button class="profile-back-btn" onclick="switchTab('gaps')">‹</button>
+        <div>
+          <h2>${c.name}</h2>
+          <div class="profile-meta">${c.iso} · ${regionLabel(c.region)} · ${c.income}${c.wb ? " · WB Program Country" : ""}</div>
+        </div>
+      </div>
+      <button class="btn-secondary" onclick="switchTab('gaps')">Country List</button>
+    </div>
+    <div class="profile-page-grid">
+      <div class="profile-card">
+        <div class="score-badge">
+          <div class="score-number">${c.composite}</div>
+          <div class="score-meta">
+            <div class="score-tier" style="color:${tierColorHex(c.tier)}">${tierLabel(c.tier)}</div>
+            <div class="score-rank">ITU GCI 2024 Overall Score (0–100)</div>
+          </div>
+        </div>
+        <div style="margin-top:16px">${metricsHTML(c)}</div>
+        <div class="pillars-section" style="margin-top:18px">
+          <h4>Pillar Breakdown (each 0–20)</h4>
+          ${PILLARS.map(p => `
+            <div class="pillar-bar-row">
+              <div class="pillar-bar-label">
+                <span class="pillar-bar-title">${p.label}${pillarStatusBadge(c, p.key)}</span>
+                <span class="pillar-score">${c[p.key]}/20</span>
+              </div>
+              <div class="pillar-bar-bg"><div class="pillar-bar-fill" style="width:${(c[p.key]/20)*100}%;background:${p.color}"></div></div>
+            </div>`).join("")}
+        </div>
+        <div class="gap-section" style="margin-top:18px">
+          <h4>Priority Gap</h4>
+          <div class="gap-card">
+            <div class="gap-title">⚠ Weakest: ${weakest.label} (${c[weakest.key]}/20)</div>
+            ${GAP_RECS[weakest.key]}
+          </div>
+        </div>
+        ${incidentHistoryHTML(c)}
+        <div class="panel-actions" style="margin-top:18px">
+          <button class="btn-add-compare" onclick="addToCompare('${c.iso}')">+ Compare</button>
+          <button onclick="switchTab('compare')">Open Comparison →</button>
+        </div>
+      </div>
+      <div class="profile-card profile-map-card">
+        <div>
+          <h3 style="font-size:14px;color:var(--wb-blue);margin-bottom:4px">Map Location</h3>
+          <div class="profile-meta">Drag to pan; scroll to zoom.</div>
+        </div>
+        <svg id="profile-mini-map"></svg>
+      </div>
+    </div>`;
+
+  switchTab("profile");
+  requestAnimationFrame(() => renderProfileMiniMap(c));
+}
+
+// ════════════════════════════════════════════════════════════
+//  COMPARE LOGIC
+// ════════════════════════════════════════════════════════════
+function addToCompare(iso) {
+  if (!compareList.includes(iso)) { compareList.push(iso); renderCompareList(); renderCountryListView(); renderTrendView(); }
+}
+function removeFromCompare(iso) {
+  compareList = compareList.filter(i => i !== iso); renderCompareList(); renderCountryListView(); renderTrendView();
+  if (document.getElementById("view-compare").classList.contains("active")) renderCompareView();
+}
+function toggleCompareCountry(iso) { compareList.includes(iso) ? removeFromCompare(iso) : addToCompare(iso); }
+function clearComparison() { compareList = []; renderCompareList(); renderCountryListView(); renderTrendView(); if (document.getElementById("view-compare").classList.contains("active")) renderCompareView(); }
+
+function renderCompareList() {
+  const el = document.getElementById("compare-list");
+  const btn = document.getElementById("btn-clear-compare");
+  if (btn) btn.disabled = compareList.length === 0;
+  if (!compareList.length) { el.innerHTML = '<span class="compare-empty">Add countries from map or list</span>'; return; }
+  el.innerHTML = compareList.map(iso => {
+    const c = countryByISO[iso];
+    return `<div class="compare-chip"><span>${c.name} <strong>${c.composite}</strong></span><button onclick="removeFromCompare('${iso}')">✕</button></div>`;
+  }).join("");
+}
+
+document.getElementById("btn-open-compare").onclick = () => { switchTab("compare"); renderCompareView(); };
+
+function renderCompareView() {
+  const el = document.getElementById("compare-content");
+  const btn = document.getElementById("btn-clear-compare");
+  if (btn) btn.disabled = compareList.length === 0;
+  if (compareList.length < 2) {
+    el.innerHTML = `<div class="compare-empty-state"><div class="icon">⚖️</div><div>Add at least 2 countries to compare</div><button class="btn-secondary" style="margin-top:14px" onclick="switchTab('gaps')">+ Add Countries</button></div>`;
+    return;
+  }
+  const countries = compareList.map(iso => countryByISO[iso]);
+
+  el.innerHTML = `<div class="compare-content">
+    <div class="radar-wrap"><canvas id="radar-canvas" style="max-width:520px;max-height:420px"></canvas></div>
+    <div class="compare-table-wrap">
+      <table class="compare-table">
+        <thead><tr><th>Metric</th>${countries.map(c => `<th>${c.name}</th>`).join("")}</tr></thead>
+        <tbody>
+          ${PILLARS.map(p => {
+            const vals = countries.map(c => c[p.key]);
+            const max = Math.max(...vals);
+            return `<tr><td>${p.label}</td>${countries.map(c => `<td class="${c[p.key]===max?"best":""}">${c[p.key]}/20</td>`).join("")}</tr>`;
+          }).join("")}
+          <tr style="background:#f8f9fa"><td><strong>GCI Overall</strong></td>${countries.map(c => {
+            const max = Math.max(...countries.map(x => x.composite));
+            return `<td class="${c.composite===max?"best":""}"><strong>${c.composite}</strong></td>`;
+          }).join("")}</tr>
+          <tr><td>GCI Tier</td>${countries.map(c => `<td style="color:${tierColorHex(c.tier)};font-weight:700">${c.tier}</td>`).join("")}</tr>
+          <tr><td>Internet Penetration</td>${countries.map(c => `<td>${c.internetPct}%</td>`).join("")}</tr>
+          <tr><td>Population</td>${countries.map(c => `<td>${c.pop}M</td>`).join("")}</tr>
+          <tr><td>Income Group</td>${countries.map(c => `<td>${c.income}</td>`).join("")}</tr>
+          <tr><td>CSIRT Status</td>${countries.map(c => `<td>${c.csirt ? "✅ Active" : "⛔ None"}</td>`).join("")}</tr>
+          <tr><td>WB Program</td>${countries.map(c => `<td>${c.wb ? "Yes" : "No"}</td>`).join("")}</tr>
+          <tr style="background:#fff8f0"><td colspan="${countries.length+1}"><strong>Incident Exposure</strong></td></tr>
+          <tr><td>Verified incidents</td>${countries.map(c => `<td>${compareIncidentCell(c,"count")}</td>`).join("")}</tr>
+          <tr><td>Latest case</td>${countries.map(c => `<td>${compareIncidentCell(c,"latest")}</td>`).join("")}</tr>
+          <tr><td>Incident sources</td>${countries.map(c => `<td>${compareIncidentCell(c,"source")}</td>`).join("")}</tr>
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+
+  // Draw radar
+  const colors = ["#1a6b3c","#4575b4","#e8773a","#8e44ad","#c0392b","#00a6a6","#f4a939","#e7298a"];
+  if (radarChart) { radarChart.destroy(); radarChart = null; }
+  const ctx = document.getElementById("radar-canvas").getContext("2d");
+  radarChart = new Chart(ctx, {
+    type: "radar",
+    data: {
+      labels: PILLARS.map(p => p.label),
+      datasets: countries.map((c, i) => ({
+        label: c.name,
+        data: PILLARS.map(p => c[p.key]),
+        borderColor: colors[i % colors.length],
+        backgroundColor: colors[i % colors.length] + "22",
+        pointBackgroundColor: colors[i % colors.length],
+        borderWidth: 2, pointRadius: 4,
+      })),
+    },
+    options: { scales: { r: { min: 0, max: 20, ticks: { stepSize: 5 } } }, plugins: { legend: { position: "bottom" } }, responsive: true }
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+//  COUNTRY LIST
+// ════════════════════════════════════════════════════════════
+function renderCountryListView() {
+  const pi = selectedPillarInfo();
+  const q = countrySearchQuery.trim();
+  const filtered = COUNTRIES.filter(c => matchesFilters(c))
+    .map(c => ({ country: c, isMatch: countryMatchesSearch(c, q) }))
+    .sort((a, b) => {
+      if (q && a.isMatch !== b.isMatch) return a.isMatch ? -1 : 1;
+      return getScore(b.country, selectedPillar) - getScore(a.country, selectedPillar) || a.country.name.localeCompare(b.country.name);
+    });
+
+  const matchCount = q ? filtered.filter(i => i.isMatch).length : 0;
+  const status = document.getElementById("country-search-status");
+  if (status) status.textContent = q ? `${matchCount} match${matchCount === 1 ? "" : "es"}` : `${filtered.length} countries`;
+
+  document.getElementById("gap-grid").innerHTML = filtered.map(({ country: c, isMatch }) => {
+    const score = getScore(c, selectedPillar);
+    const isAdded = compareList.includes(c.iso);
+    return `<div class="gap-country-card ${isMatch ? "search-match" : ""}">
+      <div class="gc-topline">
+        <div>
+          <div class="gc-name">${c.name} <span class="gc-tier-badge" style="background:${tierColorHex(c.tier)}">${c.tier}</span></div>
+          <div class="gc-score">${pi.label}: ${score}${pi.max ? "/" + pi.max : ""} · ${regionLabel(c.region)}</div>
+          <div class="gc-score">GDP: ${formatGDP(c.gdp)}${c.gdpYear ? ` (${c.gdpYear})` : ""} · Internet: ${c.internetPct}% · ${c.income}</div>
+        </div>
+        <button class="country-compare-btn ${isAdded ? "added" : ""}" onclick="toggleCompareCountry('${c.iso}')">
+          ${isAdded ? "Remove" : "+ Compare"}
+        </button>
+      </div>
+      ${pi.key === "composite" ? countryPillarChips(c) : ""}
+      <div class="gc-actions">
+        <button class="country-profile-btn" onclick="openCountryProfilePage(countryByISO['${c.iso}'])">View Profile</button>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+// ════════════════════════════════════════════════════════════
+//  TREND VIEW
+// ════════════════════════════════════════════════════════════
+function renderTrendView() {
+  const years = [2019, 2020, 2021, 2022, 2023, 2024];
+  const filtered = COUNTRIES.filter(c => matchesFilters(c)).sort((a, b) => b.composite - a.composite).slice(0, 24);
+
+  document.getElementById("trend-grid").innerHTML = filtered.map(c => {
+    const change = c.trend.at(-1) - c.trend.at(0);
+    const changeClass = change > 15 ? "change-up" : change > 0 ? "change-flat" : "change-down";
+    const isAdded = compareList.includes(c.iso);
+    const bars = c.trend.map((v, i) => {
+      const pct = Math.round((v / 100) * 60);
+      return `<div class="spark-bar" style="height:${pct}px;background:${scoreColor(v)}" data-tip="${years[i]}: ${v}"></div>`;
+    }).join("");
+
+    return `<div class="trend-card">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px">
+        <h4>${c.name} <span style="font-size:11px;color:${tierColorHex(c.tier)}">${c.tier}</span> <span style="font-size:11px;color:var(--text-muted)">${c.composite}/100</span></h4>
+        <button class="country-compare-btn ${isAdded ? "added" : ""}" onclick="toggleCompareCountry('${c.iso}')">${isAdded ? "Remove" : "+ Compare"}</button>
+      </div>
+      <div class="trend-spark">${bars}</div>
+      <div class="trend-meta"><span>${years[0]} → ${years.at(-1)}</span><span class="trend-change ${changeClass}">${change > 0 ? "+" : ""}${change} pts</span></div>
+      ${incidentHistoryHTML(c)}
+    </div>`;
+  }).join("");
+}
+
+// ════════════════════════════════════════════════════════════
+//  KEY METRICS VIEW
+// ════════════════════════════════════════════════════════════
+let tierChart = null, regionChart = null, pillarChart = null, csirtChart = null;
+
+function renderMetricsView() {
+  const filtered = COUNTRIES.filter(c => matchesFilters(c));
+  const tierCounts = { T1:0, T2:0, T3:0, T4:0, T5:0 };
+  filtered.forEach(c => tierCounts[c.tier]++);
+  const avgScore = filtered.length ? (filtered.reduce((s, c) => s + c.composite, 0) / filtered.length).toFixed(1) : 0;
+  const csirtCount = filtered.filter(c => c.csirt).length;
+  const wbCount = filtered.filter(c => c.wb).length;
+
+  document.getElementById("metrics-summary").innerHTML = `
+    <div class="summary-card"><div class="big-num">${filtered.length}</div><div class="big-label">Countries in View</div></div>
+    <div class="summary-card"><div class="big-num">${avgScore}</div><div class="big-label">Average GCI Score</div></div>
+    <div class="summary-card"><div class="big-num">${csirtCount}</div><div class="big-label">With Active CSIRT</div></div>
+    <div class="summary-card"><div class="big-num">${wbCount}</div><div class="big-label">WB Program Countries</div></div>
+    <div class="summary-card"><div class="big-num">${tierCounts.T1}</div><div class="big-label">Tier 1 (Role-Modelling)</div></div>
+  `;
+
+  // Tier distribution chart
+  if (tierChart) tierChart.destroy();
+  tierChart = new Chart(document.getElementById("chart-tier-dist"), {
+    type: "doughnut",
+    data: {
+      labels: ["T1 Role-Modelling", "T2 Advancing", "T3 Establishing", "T4 Evolving", "T5 Building"],
+      datasets: [{ data: [tierCounts.T1, tierCounts.T2, tierCounts.T3, tierCounts.T4, tierCounts.T5],
+        backgroundColor: ["#1a6b3c","#4575b4","#f4a939","#e8773a","#c0392b"] }]
+    },
+    options: { responsive: true, plugins: { legend: { position: "bottom", labels: { font: { size: 11 } } } } }
+  });
+
+  // Region average chart
+  const regions = ["SSA","MENA","EAP","SAR","LAC","ECA"];
+  const regionAvgs = regions.map(r => {
+    const rc = filtered.filter(c => c.region === r);
+    return rc.length ? +(rc.reduce((s, c) => s + c.composite, 0) / rc.length).toFixed(1) : 0;
+  });
+  if (regionChart) regionChart.destroy();
+  regionChart = new Chart(document.getElementById("chart-region-avg"), {
+    type: "bar",
+    data: {
+      labels: regions.map(regionLabel),
+      datasets: [{ label: "Avg GCI Score", data: regionAvgs, backgroundColor: "#4575b4" }]
+    },
+    options: { responsive: true, scales: { y: { beginAtZero: true, max: 100 } }, plugins: { legend: { display: false } } }
+  });
+
+  // Pillar averages chart
+  const pillarAvgs = PILLARS.map(p => {
+    return +(filtered.reduce((s, c) => s + c[p.key], 0) / filtered.length).toFixed(1);
+  });
+  if (pillarChart) pillarChart.destroy();
+  pillarChart = new Chart(document.getElementById("chart-pillar-avg"), {
+    type: "bar",
+    data: {
+      labels: PILLARS.map(p => p.label),
+      datasets: [{ label: "Average Score", data: pillarAvgs, backgroundColor: PILLARS.map(p => p.color) }]
+    },
+    options: { indexAxis: "y", responsive: true, scales: { x: { beginAtZero: true, max: 20 } }, plugins: { legend: { display: false } } }
+  });
+
+  // CSIRT by region
+  const csirtData = regions.map(r => {
+    const rc = filtered.filter(c => c.region === r);
+    return { total: rc.length, csirt: rc.filter(c => c.csirt).length };
+  });
+  if (csirtChart) csirtChart.destroy();
+  csirtChart = new Chart(document.getElementById("chart-csirt-region"), {
+    type: "bar",
+    data: {
+      labels: regions.map(regionLabel),
+      datasets: [
+        { label: "With CSIRT", data: csirtData.map(d => d.csirt), backgroundColor: "#1a6b3c" },
+        { label: "Without CSIRT", data: csirtData.map(d => d.total - d.csirt), backgroundColor: "#e8773a" }
+      ]
+    },
+    options: { responsive: true, scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } }, plugins: { legend: { position: "bottom", labels: { font: { size: 11 } } } } }
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+//  TABS
+// ════════════════════════════════════════════════════════════
+function switchTab(id) {
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.dataset.view === id));
+  document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === "view-" + id));
+  if (id === "compare") renderCompareView();
+  if (id === "gaps") renderCountryListView();
+  if (id === "trend") renderTrendView();
+  if (id === "metrics") renderMetricsView();
+  if (id === "profile" && selectedCountry) requestAnimationFrame(() => renderProfileMiniMap(selectedCountry));
+}
+
+document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => switchTab(t.dataset.view)));
+
+function exportCompareReport() {
+  if (!document.getElementById("view-compare").classList.contains("active")) switchTab("compare");
+  renderCompareView();
+  requestAnimationFrame(() => window.print());
+}
+
+function refreshFilteredViews({ clearCompare = false } = {}) {
+  if (clearCompare) { compareList = []; renderCompareList(); }
+  updateMapColors();
+  renderCountryListView();
+  renderTrendView();
+  if (document.getElementById("view-metrics").classList.contains("active")) renderMetricsView();
+  if (selectedCountry && !matchesFilters(selectedCountry)) {
+    selectedCountry = null;
+    document.getElementById("panel-name").textContent = "Country Profile";
+    document.getElementById("panel-region").textContent = "Select a country on the map";
+    document.getElementById("panel-body").innerHTML = '<div class="panel-empty">Click a highlighted country to view its cybersecurity capacity profile.</div>';
+    if (document.getElementById("view-profile").classList.contains("active")) switchTab("gaps");
+  } else if (selectedCountry && document.getElementById("view-profile").classList.contains("active")) {
+    openCountryProfilePage(selectedCountry);
+  } else if (selectedCountry) {
+    openCountryPanel(selectedCountry);
+  }
+  if (document.getElementById("view-compare").classList.contains("active")) renderCompareView();
+}
+
+// Filter controls
+document.getElementById("pillar-select").addEventListener("change", function() { selectedPillar = this.value; refreshFilteredViews(); });
+document.getElementById("country-search-input").addEventListener("input", function() { countrySearchQuery = this.value; renderCountryListView(); });
+document.querySelectorAll(".pill").forEach(pill => {
+  pill.addEventListener("click", function() {
+    document.querySelectorAll(".pill").forEach(p => p.classList.remove("active"));
+    this.classList.add("active");
+    activeRegion = this.dataset.region;
+    refreshFilteredViews({ clearCompare: true });
+  });
+});
+document.querySelectorAll(".filter-btn").forEach(btn => {
+  btn.addEventListener("click", function() {
+    document.querySelectorAll(".filter-btn").forEach(b => b.classList.remove("active"));
+    this.classList.add("active");
+    activeTier = this.dataset.tier;
+    refreshFilteredViews({ clearCompare: true });
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+//  LOAD GDP DATA FROM WORLD BANK API
+// ════════════════════════════════════════════════════════════
+async function loadGDPData() {
+  const codes = COUNTRIES.map(c => c.iso).join(";");
+  try {
+    const r = await fetch(`https://api.worldbank.org/v2/country/${codes}/indicator/NY.GDP.MKTP.CD?format=json&per_page=20000&MRV=5`);
+    if (!r.ok) throw new Error("fail");
+    const payload = await r.json();
+    const rows = Array.isArray(payload) ? payload[1] || [] : [];
+    rows.forEach(row => {
+      if (!row || row.value == null || !row.countryiso3code) return;
+      const c = countryByISO[row.countryiso3code];
+      if (!c || c.gdp != null) return;
+      c.gdp = Number(row.value);
+      c.gdpYear = row.date;
+    });
+  } catch (e) { console.warn("GDP data unavailable:", e); }
+  finally {
+    gdpLoaded = true;
+    renderCountryListView();
+    if (selectedCountry) openCountryPanel(selectedCountry);
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  INIT
+// ════════════════════════════════════════════════════════════
+renderCountryListView();
+renderTrendView();
+loadGDPData();
+</script>
+</body>
+</html>
